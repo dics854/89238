@@ -16,6 +16,12 @@ from .backup_service import (
     stop_backup_service,
     manual_backup
 )
+from .cache_service import (
+    CacheService,
+    get_cache,
+    start_cache_service,
+    stop_cache_service
+)
 
 __all__ = [
     "AIService", 
@@ -31,5 +37,9 @@ __all__ = [
     "get_backup_service",
     "start_backup_service",
     "stop_backup_service",
-    "manual_backup"
+    "manual_backup",
+    "CacheService",
+    "get_cache",
+    "start_cache_service",
+    "stop_cache_service"
 ]

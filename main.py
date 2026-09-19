@@ -62,7 +62,7 @@ from database import init_db, close_db
 from middlewares import DatabaseMiddleware, AccessMiddleware
 from handlers import routers
 from utils import setup_logger
-from services import init_error_logger, init_backup_service, start_backup_service, stop_backup_service
+from services import init_error_logger, init_backup_service, start_backup_service, stop_backup_service, start_cache_service, stop_cache_service
 
 # Настройка логирования
 logger = setup_logger()
@@ -92,6 +92,10 @@ async def on_startup(bot: Bot):
         # Инициализация базы данных
         await init_db()
         logger.info("База данных инициализирована")
+        
+        # Запуск кэш-сервиса
+        await start_cache_service()
+        logger.info("Кэш-сервис запущен")
         
         # Инициализация логгера ошибок
         init_error_logger(bot)
@@ -131,6 +135,9 @@ async def on_shutdown():
     try:
         # Остановка сервиса бэкапов
         await stop_backup_service()
+        
+        # Остановка кэш-сервиса
+        await stop_cache_service()
         
         # Закрытие соединения с БД
         await close_db()

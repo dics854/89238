@@ -1,6 +1,7 @@
 """
 Сервис для работы с AI (OpenAI)
 Обучающий помощник
+Оптимизирован с rate limiting для высокой нагрузки
 """
 
 from openai import AsyncOpenAI
@@ -8,6 +9,7 @@ from config import settings
 from typing import Optional, Dict, Any
 import asyncio
 import httpx
+from .rate_limiter import get_ai_rate_limiter
 
 
 class AIService:
@@ -29,6 +31,7 @@ class AIService:
             http_client=httpx.AsyncClient(**http_client_args) if http_client_args else None
         )
         self.model = settings.OPENAI_MODEL
+        self.rate_limiter = get_ai_rate_limiter()  # Rate limiter для контроля нагрузки
         
         # Системный промпт для бота-репетитора
         self.system_prompt = """Ты — опытный и терпеливый репетитор для школьников 1-11 классов.
@@ -1794,15 +1797,22 @@ GPT-4o умеет считать правильно. Используй свои
             # Используем gpt-4o если есть изображение в истории или передано напрямую
             model = "gpt-4o" if (image_urls or has_image) else self.model
             
-            response = await asyncio.wait_for(
-                self.client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.3,  # Понижена с 0.8 до 0.3 для более точных вычислений
-                    max_tokens=4000  # Увеличено с 2000 до 4000 для более развёрнутых объяснений
-                ),
-                timeout=30.0  # Увеличиваем таймаут для vision
-            )
+            # Применяем rate limiting для контроля нагрузки
+            await self.rate_limiter.acquire()
+            
+            try:
+                response = await asyncio.wait_for(
+                    self.client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        temperature=0.3,  # Понижена с 0.8 до 0.3 для более точных вычислений
+                        max_tokens=4000  # Увеличено с 2000 до 4000 для более развёрнутых объяснений
+                    ),
+                    timeout=45.0  # Таймаут 45 секунд для ответа
+                )
+            finally:
+                # Освобождаем slot в rate limiter
+                self.rate_limiter.release()
             
             # Подсчитываем использованные токены
             tokens_used = response.usage.total_tokens if response.usage else 0

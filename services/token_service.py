@@ -13,10 +13,10 @@ from typing import Optional
 class TokenService:
     """Управление токенами пользователей"""
     
-    # Лимит токенов на месяц (~$2 на GPT-4o)
+    # Лимит токенов на месяц
     # GPT-4o: входящие $5/1M, исходящие $15/1M
-    # Примерно 400k токенов (~200-300 диалогов с фото)
-    MONTHLY_TOKEN_LIMIT = 400000
+    # 1 миллион токенов на пользователя в месяц
+    MONTHLY_TOKEN_LIMIT = 1000000
     
     @staticmethod
     async def check_and_update_tokens(session: AsyncSession, user: User) -> dict:
@@ -138,14 +138,9 @@ class TokenService:
         # Процент использования
         usage_percent = int((tokens_used / tokens_limit) * 100) if tokens_limit > 0 else 0
         
-        # Примерное количество оставшихся диалогов
-        # Средний диалог с фото ~1500-2000 токенов
-        estimated_dialogs = tokens_left // 1500
-        
         result = f"📊 **Ваш лимит токенов:**\n\n"
         result += f"💰 Использовано: {tokens_used:,} / {tokens_limit:,} ({usage_percent}%)\n"
         result += f"✨ Осталось: {tokens_left:,} токенов\n"
-        result += f"📝 Примерно диалогов: ~{estimated_dialogs}\n"
         result += f"🔄 Обновление: {reset_date.strftime('%d.%m.%Y')}\n"
         
         if token_info['is_frozen']:

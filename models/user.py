@@ -29,7 +29,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Лимиты токенов
-    tokens_limit: Mapped[int] = mapped_column(Integer, default=400000, nullable=False)  # ~$2 на GPT-4o
+    tokens_limit: Mapped[int] = mapped_column(Integer, default=1000000, nullable=False)  # 1M токенов на месяц
     tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tokens_reset_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)  # Дата следующего обновления
     tokens_frozen: Mapped[bool] = mapped_column(default=False, nullable=False)  # Заморожены ли токены

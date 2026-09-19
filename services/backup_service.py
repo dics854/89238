@@ -150,33 +150,54 @@ class BackupService:
         """
         Сбор данных из всех таблиц
         
-        ВАЖНО: Коды доступа сохраняются только те, которые привязаны к пользователям.
-        Неактивированные коды (activated_by IS NULL) не включаются в бэкап.
+        ВАЖНО: 
+        - Сохраняются ТОЛЬКО пользователи с username
+        - Коды доступа только привязанные к пользователям с username
+        - Задачи и прогресс только от пользователей с username
         """
         
-        # Получаем пользователей
-        users_result = await session.execute(select(User))
-        users = users_result.scalars().all()
-        
-        # Получаем задачи
-        tasks_result = await session.execute(select(Task))
-        tasks = tasks_result.scalars().all()
-        
-        # Получаем прогресс
-        progress_result = await session.execute(select(Progress))
-        progress_records = progress_result.scalars().all()
-        
-        # Получаем коды доступа ТОЛЬКО те, которые привязаны к пользователям (activated_by IS NOT NULL)
-        codes_result = await session.execute(
-            select(AccessCode).where(AccessCode.activated_by.isnot(None))
+        # Получаем пользователей ТОЛЬКО с username
+        users_result = await session.execute(
+            select(User).where(User.username.isnot(None))
         )
-        access_codes = codes_result.scalars().all()
+        users = users_result.scalars().all()
+        user_ids = [user.id for user in users]
+        
+        logger.info(f"Бэкап: найдено {len(users)} пользователей с username")
+        
+        # Получаем данные только от пользователей с username
+        if user_ids:
+            # Получаем задачи ТОЛЬКО от пользователей с username
+            tasks_result = await session.execute(
+                select(Task).where(Task.user_id.in_(user_ids))
+            )
+            tasks = tasks_result.scalars().all()
+            
+            # Получаем прогресс ТОЛЬКО от пользователей с username
+            progress_result = await session.execute(
+                select(Progress).where(Progress.user_id.in_(user_ids))
+            )
+            progress_records = progress_result.scalars().all()
+            
+            # Получаем коды доступа ТОЛЬКО привязанные к пользователям с username
+            telegram_ids = [user.telegram_id for user in users]
+            codes_result = await session.execute(
+                select(AccessCode).where(
+                    AccessCode.activated_by.in_(telegram_ids)
+                )
+            )
+            access_codes = codes_result.scalars().all()
+        else:
+            tasks = []
+            progress_records = []
+            access_codes = []
         
         # Формируем структуру данных
         backup_data = {
             "backup_info": {
                 "timestamp": datetime.now().isoformat(),
-                "version": "1.0",
+                "version": "2.0",  # Новая версия с токенами и фильтрацией
+                "filter": "only_users_with_username",
                 "database": settings.DB_PATH
             },
             "users": [self._user_to_dict(user) for user in users],
@@ -197,7 +218,13 @@ class BackupService:
             "last_name": user.last_name,
             "role": user.role.value if user.role else None,
             "class_number": user.class_number,
-            "created_at": user.created_at.isoformat() if user.created_at else None
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            # ТОКЕНЫ - важно для корректного восстановления
+            "tokens_limit": user.tokens_limit,
+            "tokens_used": user.tokens_used,
+            "tokens_reset_date": user.tokens_reset_date.isoformat() if user.tokens_reset_date else None,
+            "tokens_frozen": user.tokens_frozen,
+            "first_tutor_usage": user.first_tutor_usage
         }
     
     def _task_to_dict(self, task: Task) -> dict:

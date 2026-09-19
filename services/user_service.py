@@ -1,5 +1,6 @@
 """
 Сервис для работы с пользователями
+Оптимизирован с кэшированием для высокой нагрузки
 """
 
 from sqlalchemy import select
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models import User, Progress
 from models.user import UserRole
 from typing import Optional, List
+from .cache_service import get_cache
 
 
 class UserService:
@@ -15,7 +17,7 @@ class UserService:
     @staticmethod
     async def get_user(session: AsyncSession, telegram_id: int) -> Optional[User]:
         """
-        Получить пользователя по Telegram ID
+        Получить пользователя по Telegram ID (с кэшированием)
         
         Args:
             session: Сессия БД
@@ -24,10 +26,29 @@ class UserService:
         Returns:
             Объект User или None
         """
+        # Проверяем кэш
+        cache = get_cache()
+        cache_key = cache.make_key("user", telegram_id)
+        cached_user = await cache.get(cache_key)
+        
+        if cached_user is not None:
+            # Пересоздаём объект в текущей сессии
+            result = await session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            return result.scalar_one_or_none()
+        
+        # Запрашиваем из БД
         result = await session.execute(
             select(User).where(User.telegram_id == telegram_id)
         )
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
+        
+        # Сохраняем в кэш на 5 минут
+        if user:
+            await cache.set(cache_key, user.telegram_id, ttl_seconds=300)
+        
+        return user
     
     @staticmethod
     async def get_user_by_username(session: AsyncSession, username: str) -> Optional[User]:
@@ -80,6 +101,12 @@ class UserService:
         )
         session.add(user)
         await session.flush()
+        
+        # Добавляем в кэш
+        cache = get_cache()
+        cache_key = cache.make_key("user", telegram_id)
+        await cache.set(cache_key, telegram_id, ttl_seconds=300)
+        
         return user
     
     @staticmethod
@@ -99,6 +126,12 @@ class UserService:
         if user:
             user.role = role
             await session.flush()
+            
+            # Инвалидируем кэш
+            cache = get_cache()
+            cache_key = cache.make_key("user", telegram_id)
+            await cache.delete(cache_key)
+        
         return user
     
     @staticmethod
@@ -119,9 +152,23 @@ class UserService:
             user.class_number = class_number
             
             # Создаем запись прогресса для ученика если её нет
-            progress = await session.execute(
+            progress_result = await session.execute(
                 select(Progress).where(Progress.user_id == user.id)
             )
+            existing_progress = progress_result.scalar_one_or_none()
+            
+            if not existing_progress:
+                progress = Progress(user_id=user.id)
+                session.add(progress)
+            
+            await session.flush()
+            
+            # Инвалидируем кэш
+            cache = get_cache()
+            cache_key = cache.make_key("user", telegram_id)
+            await cache.delete(cache_key)
+        
+        return user
             if not progress.scalar_one_or_none():
                 new_progress = Progress(user_id=user.id)
                 session.add(new_progress)

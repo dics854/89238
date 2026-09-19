@@ -246,31 +246,29 @@ async def list_all_codes(callback: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "admin_users")
 async def users_menu(callback: CallbackQuery, session: AsyncSession):
-    """Меню управления пользователями - показываем всех с username"""
+    """Меню управления пользователями - показываем только с username"""
     if not is_admin(callback.from_user.id):
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
-    # Получаем всех пользователей
+    # Получаем только пользователей с username
     result = await session.execute(
-        select(User).order_by(User.created_at.desc()).limit(20)
+        select(User)
+        .where(User.username.isnot(None))
+        .order_by(User.created_at.desc())
+        .limit(20)
     )
     users = result.scalars().all()
     
     if not users:
-        await callback.answer("Нет пользователей в базе", show_alert=True)
+        await callback.answer("Нет пользователей с username в базе", show_alert=True)
         return
     
-    response = f"👥 Последние пользователи ({len(users)}):\n\n"
+    response = f"👥 Последние пользователи с username ({len(users)}):\n\n"
     
     for user in users:
         response += f"👤 {user.full_name}\n"
-        
-        if user.username:
-            response += f"   @{user.username}\n"
-        else:
-            response += f"   ⚠️ НЕТ USERNAME\n"
-        
+        response += f"   @{user.username}\n"
         response += f"   ID: {user.telegram_id}\n"
         response += f"   Регистрация: {user.created_at.strftime('%d.%m.%Y %H:%M')}\n"
         
@@ -558,6 +556,17 @@ async def restore_from_json_backup(message: Message, session: AsyncSession, stat
                     if user_data.get('role'):
                         existing_user.role = UserRole(user_data['role'])
                     existing_user.class_number = user_data.get('class_number')
+                    # Обновляем токены если они есть в бэкапе
+                    if 'tokens_limit' in user_data:
+                        existing_user.tokens_limit = user_data.get('tokens_limit', 1000000)
+                    if 'tokens_used' in user_data:
+                        existing_user.tokens_used = user_data.get('tokens_used', 0)
+                    if 'tokens_frozen' in user_data:
+                        existing_user.tokens_frozen = user_data.get('tokens_frozen', False)
+                    if 'first_tutor_usage' in user_data:
+                        existing_user.first_tutor_usage = user_data.get('first_tutor_usage', True)
+                    if user_data.get('tokens_reset_date'):
+                        existing_user.tokens_reset_date = datetime.fromisoformat(user_data['tokens_reset_date'])
                     updated_count += 1
                 else:
                     # Создаём нового пользователя
@@ -567,11 +576,18 @@ async def restore_from_json_backup(message: Message, session: AsyncSession, stat
                         first_name=user_data.get('first_name'),
                         last_name=user_data.get('last_name'),
                         role=UserRole(user_data['role']) if user_data.get('role') else None,
-                        class_number=user_data.get('class_number')
+                        class_number=user_data.get('class_number'),
+                        # ТОКЕНЫ - восстанавливаем из бэкапа
+                        tokens_limit=user_data.get('tokens_limit', 1000000),
+                        tokens_used=user_data.get('tokens_used', 0),
+                        tokens_frozen=user_data.get('tokens_frozen', False),
+                        first_tutor_usage=user_data.get('first_tutor_usage', True)
                     )
                     
                     if user_data.get('created_at'):
                         new_user.created_at = datetime.fromisoformat(user_data['created_at'])
+                    if user_data.get('tokens_reset_date'):
+                        new_user.tokens_reset_date = datetime.fromisoformat(user_data['tokens_reset_date'])
                     
                     session.add(new_user)
                     added_count += 1

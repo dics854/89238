@@ -584,9 +584,18 @@ async def finish_tutoring_session(callback: CallbackQuery, session: AsyncSession
             task.is_correct = False
             task.ai_explanation = "Занятие завершено до получения правильного ответа"
             await session.commit()
+        
+        # Обновляем прогресс пользователя
+        user = await UserService.get_user(session, user_id)
+        progress_result = await session.execute(
+            select(Progress).where(Progress.user_id == user.id)
+        )
+        progress = progress_result.scalar_one_or_none()
+        if progress:
+            progress.add_task(False)  # False - задача не решена правильно
+        await session.commit()
     
     is_admin = user_id in settings.admin_ids_list
-    user = await UserService.get_user(session, user_id)
     
     await state.clear()
     await callback.message.edit_text(
